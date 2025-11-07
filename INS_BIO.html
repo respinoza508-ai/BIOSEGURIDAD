@@ -1,0 +1,365 @@
+--- index.html ---
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Inspección de Bioseguridad</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body{padding:18px;background:#f8fafc}
+    .criterion {border:1px solid #e6eef6;border-radius:8px;padding:12px;margin-bottom:10px;background:#fff}
+    .btn-state{min-width:110px}
+    .photo-thumb{max-height:120px;margin:6px;border-radius:6px}
+    header .meta{font-size:14px;color:#475569}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="mb-3">
+      <div class="d-flex justify-content-between align-items-center">
+        <h1>Inspección de Bioseguridad</h1>
+        <div class="text-end meta">
+          <div>Inspector: <strong>Rudy Espinoza</strong></div>
+          <div id="fechaHoy"></div>
+        </div>
+      </div>
+      <hr>
+    </header>
+
+    <section id="datosGenerales" class="mb-3 card card-body">
+      <h5>Datos generales</h5>
+      <div class="row g-2 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label">Zona</label>
+          <select id="zonaSelect" class="form-select"></select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Granja</label>
+          <select id="granjaSelect" class="form-select" disabled></select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Fecha y hora</label>
+          <input id="fechaHora" type="datetime-local" class="form-control">
+        </div>
+      </div>
+    </section>
+
+    <section id="criterios" class="mb-3">
+      <h5>Evaluación de mesa de necropsia y compostera</h5>
+      <div id="criteriaContainer"></div>
+    </section>
+
+    <div class="d-flex gap-2 mb-3">
+      <button id="generatePdf" class="btn btn-primary" disabled>Generar informe PDF</button>
+      <button id="saveReport" class="btn btn-outline-secondary">Guardar informe (app)</button>
+      <button id="openReports" class="btn btn-outline-info">Ver informes guardados</button>
+    </div>
+
+    <section id="reportsList" class="mb-3"></section>
+
+    <footer class="text-muted small mt-4">Aplicación creada a partir del archivo del usuario. Permite tomar fotos desde cámara, borrar y regenerar PDF que incluye textos predefinidos.</footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script>
+    // Datos del archivo proporcionado
+    const ZONAS = {
+      "PARAMONGA": ["CIELO 1","CIELO 2","CIELO 3","CIELO 4","CIELO 5","CIELO 6","CIELO 7","GAVILAN","LITERA 1","LITERA 3","BERMEJO 6","BERMEJO 8","AMPLIACION","BERMEJO 4"],
+      "CARRETERA": ["ATAHUAMPA A","ATAHUAMPA B","SUAREZ","EL GORDO","OJA","TRES PALOS","ALBERTO","JFA","JFB"],
+      "CANAL": ["SAN JUAN","OSCAR","SAN PEDRO","SAN PEDRO 2","SAN PEDRO 1","YUZURIHA","MOMIY","DON JOSUE","SANTA ROSA","ESTEBAN","TIROLER","SINCHI","INFANTES"],
+      "HUARAL": ["AUCALLAMA 1"],
+      "PARAISO": ["PARAISO 1","PARAISO 2","PARAISO 3","PARAISO 4","PARAISO 5","DOÑA LUISA"]
+    };
+
+    const CRITERIA = [
+      {id:1, title:'Pediluvios y boteros (mesa necropsia y compostera)', ok: 'Los pediluvios de la mesa de necropsia y la compostera están activos, limpios y con la solución desinfectante adecuada, hay botas limpias.', nok: 'BARRERA ROTA: Uno o ambos pediluvios (Necropsia/Compostera) están dañados, sucios o sin desinfectante. Esto anula la bioseguridad. No se encontró botas para ingresar a compostera.'},
+      {id:2, title:'Mesa de necropsia (condiciones de bioseguridad)', ok: 'La mesa de necropsia se encuentra limpia, la estructura se encuentra sin daños y no hay restos de mortalidad.', nok: 'INCUMPLIMIENTO CRÍTICO: Se observa suciedad, restos de mortalidad, área sucia o estructura en mal estado.'},
+      {id:3, title:'Manejo de mortalidad y cobertura', ok: 'La mortalidad se encuentra cubierta totalmente con guano sanitizado, asegurando el aislamiento. No se evidencia presencia de insectos, ni malos olores producto de un mal proceso de compostaje.', nok: 'ALERTA SANITARIA: Se observa mortalidad expuesta o cobertura insuficiente. Esto representa un riesgo inmediato de proliferación de vectores.'},
+      {id:4, title:'Integridad estructural y confinamiento', ok: 'La estructura física de la compostera está en buen estado, sin daños o grietas.', nok: 'FALLA ESTRUCTURAL: Se identifican daños (grietas, roturas, etc.) que afectan la contención y bioseguridad.'},
+      {id:5, title:'Control de plagas (moscas y roedores)', ok: 'Presencia de los dos cebaderos para el control de moscas y roedores. El programa de control es visiblemente eficiente.', nok: 'FALTA DE CONTROL VECTORES: Ausencia de los cebaderos, o presencia significativa de plagas (moscas, larvas o roedores) por ineficiencia del control.'},
+      {id:6, title:'Gestión de almacén de guano', ok: 'Existe guano sanitizado disponible y almacenado de forma segura (sobre tarima, en sacos cerrados).', nok: 'ALMACÉN INADECUADO: No hay guano sanitizado disponible, o el guano está expuesto/mal almacenado (sin tarima, sacos abiertos) o hay restos de guano acumulado.'},
+      {id:7, title:'Manejo del lixiviado y drenajes', ok: 'La poza de lixiviado en buen estado, sin desbordes ni fugas. Los drenajes están limpios y funcionales.', nok: 'RIESGO AMBIENTAL: Desborde o acumulación excesiva de lixiviado, o presencia de fugas.'},
+      {id:8, title:'Orden y limpieza de perímetro', ok: 'El perímetro y las vías de acceso están libres de desechos, agua estancada, mortalidad accidental y maleza.', nok: 'FALTA DE ORDEN/LIMPIEZA: Perímetro sucio o con acumulación de maleza/residuos, creando refugio para plagas.'}
+    ];
+
+    // Estado de la evaluación
+    const state = {zona:null, granja:null, fechaHora:null, criteria:{}};
+
+    // Inicializar
+    document.addEventListener('DOMContentLoaded', ()=>{
+      // fecha actual
+      const hoy = new Date(); document.getElementById('fechaHoy').innerText = hoy.toLocaleString();
+      const fh = new Date(); fh.setMinutes(fh.getMinutes()-fh.getTimezoneOffset());
+      document.getElementById('fechaHora').value = fh.toISOString().slice(0,16);
+
+      // poblar zonas
+      const zonaSelect = document.getElementById('zonaSelect');
+      zonaSelect.innerHTML = '<option value="">-- Seleccionar zona --</option>' + Object.keys(ZONAS).map(z=>`<option value="${z}">${z}</option>`).join('');
+      zonaSelect.addEventListener('change', onZonaChange);
+
+      // poblar criterios
+      const ctn = document.getElementById('criteriaContainer');
+      for(const c of CRITERIA){
+        state.criteria[c.id] = {status:null, photo:null};
+        const div = document.createElement('div'); div.className='criterion'; div.id = 'crit_'+c.id;
+        div.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center">
+            <div><strong>${c.id}. ${c.title}</strong></div>
+            <div>
+              <button class="btn btn-outline-success btn-state" data-id="${c.id}" data-val="ok">Cumple</button>
+              <button class="btn btn-outline-danger btn-state" data-id="${c.id}" data-val="nok">No cumple</button>
+            </div>
+          </div>
+          <div class="mt-2" id="crit_body_${c.id}\"></div>
+        `;
+        ctn.appendChild(div);
+      }
+
+      document.querySelectorAll('.btn-state').forEach(b=>b.addEventListener('click', onStateClick));
+
+      document.getElementById('generatePdf').addEventListener('click', generatePdf);
+      document.getElementById('saveReport').addEventListener('click', saveReport);
+      document.getElementById('openReports').addEventListener('click', showSavedReports);
+
+      renderSavedReportsList();
+      checkCanGenerate();
+    });
+
+    function onZonaChange(e){
+      const z = e.target.value; state.zona = z || null;
+      const gsel = document.getElementById('granjaSelect');
+      if(!z){ gsel.innerHTML=''; gsel.disabled = true; state.granja = null; return; }
+      gsel.innerHTML = '<option value="">-- Seleccionar granja --</option>' + ZONAS[z].map(g=>`<option value="${g}">${g}</option>`).join('');
+      gsel.disabled = false;
+      gsel.addEventListener('change', ev=>{ state.granja = ev.target.value || null; });
+    }
+
+    function onStateClick(e){
+      const id = Number(e.currentTarget.dataset.id);
+      const val = e.currentTarget.dataset.val; // 'ok' or 'nok'
+      // botón activo styling
+      const parent = document.getElementById('crit_'+id);
+      parent.querySelectorAll('.btn-state').forEach(b=>{ b.classList.remove('active'); });
+      if(val==='ok'){
+        e.currentTarget.classList.add('active');
+        state.criteria[id].status = 'ok';
+        state.criteria[id].photo = null;
+        document.getElementById('crit_body_'+id).innerHTML = `<div class="text-success mt-2">${escapeHtml(getCriteriaById(id).ok)}</div>`;
+      } else {
+        e.currentTarget.classList.add('active');
+        state.criteria[id].status = 'nok';
+        // mostrar captura foto
+        renderPhotoCapture(id);
+      }
+      checkCanGenerate();
+    }
+
+    function renderPhotoCapture(id){
+      const body = document.getElementById('crit_body_'+id);
+      body.innerHTML = `
+        <div class="text-danger mt-2">${escapeHtml(getCriteriaById(id).nok)}</div>
+        <div class="mt-2">
+          <input accept="image/*" capture="environment" type="file" id="file_${id}" />
+          <div id="thumbs_${id}" class="mt-2"></div>
+        </div>
+      `;
+      const input = document.getElementById('file_'+id);
+      input.addEventListener('change', async ev=>{
+        const f = ev.target.files[0];
+        if(!f) return;
+        const b64 = await fileToBase64(f);
+        state.criteria[id].photo = b64;
+        renderThumb(id);
+        checkCanGenerate();
+      });
+    }
+
+    function renderThumb(id){
+      const t = document.getElementById('thumbs_'+id);
+      t.innerHTML = '';
+      if(state.criteria[id].photo){
+        const img = document.createElement('img'); img.src = state.criteria[id].photo; img.className='photo-thumb';
+        const del = document.createElement('button'); del.className='btn btn-sm btn-outline-danger ms-2'; del.textContent='Borrar foto';
+        del.addEventListener('click', ()=>{ state.criteria[id].photo = null; document.getElementById('file_'+id).value = ''; t.innerHTML=''; });
+        t.appendChild(img); t.appendChild(del);
+      }
+    }
+
+    function getCriteriaById(id){ return CRITERIA.find(c=>c.id===id); }
+
+    function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    function fileToBase64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=e=>rej(e); r.readAsDataURL(file); }); }
+
+    function checkCanGenerate(){
+      // todos los criterios deben tener status
+      const all = CRITERIA.every(c=>state.criteria[c.id].status !== null);
+      const btn = document.getElementById('generatePdf');
+      btn.disabled = !all;
+    }
+
+    async function generatePdf(){
+      // construir HTML simple para el reporte (visualmente limpio) y usar jspdf+html2canvas
+      const reportHtml = buildReportHtml();
+      // abrir en nueva ventana para vista previa/impresión
+      const w = window.open('','_blank');
+      w.document.write(reportHtml);
+      w.document.close();
+      // generar pdf automáticamente (opcional) usando html2canvas + jspdf
+      try{
+        const el = w.document.getElementById('reportRoot');
+        // esperar a que se carguen imágenes
+        await waitForImagesToLoad(el);
+        const canvas = await html2canvas(el, {scale:1.2, useCORS:true});
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p','mm','a4');
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const imgProps = pdf.getImageProperties(imgData);
+        const imgWidth = pageWidth - 20; // margin
+        const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+        pdf.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
+        const blob = pdf.output('blob');
+        const url = URL.createObjectURL(blob);
+        // añadir botón de descarga y de impresión en la ventana
+        const controls = w.document.createElement('div'); controls.style.margin='10px 0';
+        controls.innerHTML = `<a class="btn btn-primary me-2" href="${url}" download="informe_inspeccion.pdf">Descargar PDF</a> <button class="btn btn-secondary" id="printBtn">Imprimir</button>`;
+        w.document.body.insertBefore(controls, w.document.body.firstChild);
+        w.document.getElementById('printBtn').addEventListener('click', ()=>{ w.print(); });
+      } catch(err){ console.error('Error generando PDF',err); alert('PDF generado (vista), pero ocurrió un error creando el archivo automáticamente.'); }
+    }
+
+    function buildReportHtml(){
+      const fecha = document.getElementById('fechaHora').value || new Date().toISOString();
+      let html = `<!doctype html><html><head><meta charset="utf-8"><title>Informe</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"></head><body><div id="reportRoot" class="p-3" style="font-family:Arial;color:#111;background:#fff">`;
+      html += `<h2>Inspección de Bioseguridad</h2><p><strong>Inspector:</strong> Rudy Espinoza</p>`;
+      html += `<p><strong>Zona:</strong> ${escapeHtml(state.zona||'—')} &nbsp; <strong>Granja:</strong> ${escapeHtml(state.granja||'—')}</p>`;
+      html += `<p><strong>Fecha y hora:</strong> ${escapeHtml(fecha)}</p><hr>`;
+      for(const c of CRITERIA){
+        const st = state.criteria[c.id];
+        html += `<div style="margin-bottom:12px"><h5>${c.id}. ${escapeHtml(c.title)}</h5>`;
+        if(st.status==='ok'){
+          html += `<p style="color:green">CUMPLE: ${escapeHtml(c.ok)}</p>`;
+        } else {
+          html += `<p style="color:red">NO CUMPLE: ${escapeHtml(c.nok)}</p>`;
+          if(st.photo) html += `<div><img src="${st.photo}" style="max-width:380px;border-radius:6px;margin-top:6px" /></div>`;
+        }
+        html += `</div>`;
+      }
+      html += `<hr><p>Firma: __________________________</p></div></body></html>`;
+      return html;
+    }
+
+    function waitForImagesToLoad(el){
+      const imgs = el.querySelectorAll('img');
+      if(!imgs.length) return Promise.resolve();
+      const promises = Array.from(imgs).map(img=>{
+        return new Promise(res=>{ if(img.complete) return res(); img.onload=img.onerror=res; });
+      });
+      return Promise.all(promises);
+    }
+
+    // Guardar informe (json) en localStorage
+    function saveReport(){
+      const title = `informe_${Date.now()}`;
+      const data = {
+        id: title,
+        inspector: 'Rudy Espinoza',
+        zona: state.zona, granja: state.granja,
+        fechaHora: document.getElementById('fechaHora').value,
+        criteria: JSON.parse(JSON.stringify(state.criteria)),
+        createdAt: new Date().toISOString()
+      };
+      const arr = JSON.parse(localStorage.getItem('inspecciones_app')||'[]');
+      arr.unshift(data);
+      localStorage.setItem('inspecciones_app', JSON.stringify(arr));
+      alert('Informe guardado en la app');
+      renderSavedReportsList();
+    }
+
+    function renderSavedReportsList(){
+      const node = document.getElementById('reportsList'); node.innerHTML = '';
+      const arr = JSON.parse(localStorage.getItem('inspecciones_app')||'[]');
+      if(!arr.length) return node.innerHTML = '<div class="alert alert-secondary">No hay informes guardados.</div>';
+      const ul = document.createElement('div');
+      for(const r of arr){
+        const card = document.createElement('div'); card.className='card mb-2';
+        card.innerHTML = `<div class="card-body d-flex justify-content-between align-items-center"><div>
+          <div><strong>${escapeHtml(r.id)}</strong></div>
+          <div class="small text-muted">${escapeHtml(r.zona||'')} - ${escapeHtml(r.granja||'')} — ${new Date(r.createdAt).toLocaleString()}</div>
+        </div>
+        <div>
+          <button class="btn btn-sm btn-outline-primary me-1" data-id="${r.id}" data-action="view">Ver</button>
+          <button class="btn btn-sm btn-outline-success me-1" data-id="${r.id}" data-action="pdf">PDF</button>
+          <button class="btn btn-sm btn-outline-danger" data-id="${r.id}" data-action="del">Eliminar</button>
+        </div></div>`;
+        ul.appendChild(card);
+      }
+      node.appendChild(ul);
+      node.querySelectorAll('button[data-action]').forEach(b=>b.addEventListener('click', e=>{
+        const id = e.currentTarget.dataset.id; const act = e.currentTarget.dataset.action;
+        const arr = JSON.parse(localStorage.getItem('inspecciones_app')||'[]'); const r = arr.find(x=>x.id===id);
+        if(act==='view'){
+          const w = window.open('','_blank'); w.document.write(buildReportHtmlFromSaved(r)); w.document.close();
+        } else if(act==='pdf'){
+          const w = window.open('','_blank'); w.document.write(buildReportHtmlFromSaved(r)); w.document.close();
+          // similar generation as above (skip auto-pdf to keep UX simple)
+        } else if(act==='del'){
+          if(confirm('Eliminar informe?')){ const n = arr.filter(x=>x.id!==id); localStorage.setItem('inspecciones_app', JSON.stringify(n)); renderSavedReportsList(); }
+        }
+      }));
+    }
+
+    function buildReportHtmlFromSaved(r){
+      let html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(r.id)}</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"></head><body><div class="p-3">`;
+      html += `<h3>Informe guardado: ${escapeHtml(r.id)}</h3><p><strong>Inspector:</strong> Rudy Espinoza</p>`;
+      html += `<p><strong>Zona:</strong> ${escapeHtml(r.zona||'—')} &nbsp; <strong>Granja:</strong> ${escapeHtml(r.granja||'—')}</p>`;
+      html += `<p><strong>Fecha:</strong> ${escapeHtml(r.fechaHora||'—')}</p><hr>`;
+      for(const idx in r.criteria){
+        const c = getCriteriaById(Number(idx));
+        const st = r.criteria[idx];
+        html += `<div style="margin-bottom:12px"><h5>${c.id}. ${escapeHtml(c.title)}</h5>`;
+        if(st.status==='ok') html += `<p style="color:green">CUMPLE: ${escapeHtml(c.ok)}</p>`;
+        else { html += `<p style="color:red">NO CUMPLE: ${escapeHtml(c.nok)}</p>`; if(st.photo) html += `<div><img src="${st.photo}" style="max-width:380px;border-radius:6px;margin-top:6px" /></div>`; }
+        html += `</div>`;
+      }
+      html += `</div></body></html>`;
+      return html;
+    }
+
+    function showSavedReports(){
+      // toggle visibility of reports list
+      const node = document.getElementById('reportsList');
+      node.style.display = node.style.display === 'none' ? 'block' : 'block';
+    }
+
+  </script>
+</body>
+</html>
+
+--- README.md ---
+# Aplicación web "Inspección de Bioseguridad"
+
+Esta aplicación single-file (index.html) implementa lo pedido en el documento del usuario:
+- Cabecera con Inspector (Rudy Espinoza) y fecha actual.
+- Selects dependientes: Zona -> Granja (datos precargados según el archivo).
+- 8 criterios con botones 'Cumple' / 'No cumple'. Si se marca 'No cumple' se solicita foto con la cámara (input file capture), y la foto se puede borrar y reemplazar.
+- Generación de informe (vista + PDF usando html2canvas + jsPDF). El PDF incluye textos predefinidos y fotos cuando aplica.
+- Guardado de informes en la aplicación (localStorage), lista de informes guardados con vista y eliminación.
+
+## Cómo usar
+1. Abrir `index.html` en un navegador moderno (Chrome/Edge/Firefox móvil permiten captura con cámara).
+2. Seleccionar Zona > Granja, completar/validar los 8 criterios.
+3. Cuando todos los criterios estén evaluados, se habilita el botón "Generar informe PDF".
+4. Guardar informes en la app y verlos desde "Ver informes guardados".
+
+## Mejoras posibles (si quieres que las implemente)
+- Subida y sincronización con servidor (API) para multiusuario y respaldo.
+- Firmas digitales (firma con dedo o stylus) y geolocalización automática añadida al informe.
+- Almacenamiento de PDFs en IndexedDB para manejar archivos binarios sin límites de localStorage.
+- Traducción, validaciones extra y UI/UX más pulido con frameworks (React + Tailwind).
+
+--- FIN ---
